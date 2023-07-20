@@ -1,3 +1,20 @@
-images/*.jpeg
-results/*.jpeg
+# Ignore all JPEG images
+*.jpeg
+*.jpg
+*.png
+*.gif
+
+# Ignore all .dat files
 *.dat
+
+# Ignore all directories containing images (if needed)
+images/*.jpeg
+images/*.jpg
+images/*.png
+images/*.gif
+
+results/*.jpeg
+results/*.jpg
+results/*.png
+results/*.gif
+
