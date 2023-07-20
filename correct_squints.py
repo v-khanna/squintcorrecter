@@ -1,51 +1,56 @@
 import cv2
 import dlib
 import numpy as np
-from skimage import transform
 import os
+from imutils import face_utils
 
-# Paths
-images_path = './images'
-results_path = './results'
-landmarks_model_path = 'shape_predictor_68_face_landmarks.dat'
+def get_center(points):
+    x = (points[0,0] + points[1,0]) // 2
+    y = (points[0,1] + points[1,1]) // 2
+    return (x, y)
 
-# Load the Haar cascade xml file for face detection
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+def get_angle(point1, point2):
+    x1, y1 = point1
+    x2, y2 = point2
+    return np.degrees(np.arctan2(y2 - y1, x2 - x1))
 
-# Load the facial landmarks predictor
-predictor = dlib.shape_predictor(landmarks_model_path)
+def align_eye(image, landmarks):
+    left_eye = landmarks[36:42]
+    right_eye = landmarks[42:48]
 
-# For each image in the images directory
-for filename in os.listdir(images_path):
-    if filename.endswith('.jpg') or filename.endswith('.png'):
-        # Read the image
-        img = cv2.imread(os.path.join(images_path, filename))
+    left_eye_center = get_center(left_eye)
+    right_eye_center = get_center(right_eye)
 
-        # Convert color style from BGR to RGB
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    angle = get_angle(left_eye_center, right_eye_center)
 
-        # Perform face detection
-        faces = face_cascade.detectMultiScale(img_rgb, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+    # Converting to floats here
+    M = cv2.getRotationMatrix2D((float(left_eye_center[0]), float(left_eye_center[1])), angle, 1)
+    
+    aligned = cv2.warpAffine(image, M, (image.shape[1], image.shape[0]), flags=cv2.INTER_CUBIC)
+    
+    return aligned
 
-        # For each detected face
-        for (x, y, w, h) in faces:
-            # Get the facial landmarks
-            landmarks = predictor(img_rgb, dlib.rectangle(x, y, x + w, y + h))
 
-            # Get the coordinates of the corners of the left eye
-            left_eye = np.array([(landmarks.part(n).x, landmarks.part(n).y) for n in range(36, 42)], np.int32)
+if __name__ == "__main__":
+    detector = dlib.get_frontal_face_detector()
+    predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
 
-            # Compute the aspect ratio of the left eye to estimate if it's squinting
-            eye_aspect_ratio = (np.linalg.norm(left_eye[1] - left_eye[5]) + np.linalg.norm(left_eye[2] - left_eye[4])) / (2.0 * np.linalg.norm(left_eye[0] - left_eye[3]))
+    images_dir = "images/"
+    images = [f for f in os.listdir(images_dir) if f.endswith(".jpeg") or f.endswith(".jpg")]
 
-            # If the eye aspect ratio is less than a certain threshold, it might be a squint
-            if eye_aspect_ratio < 0.2:  # you may need to experiment to find a suitable threshold
-                # Stretch the eye vertically a bit
-                eye_img = img_rgb[y:y+h, x:x+w]
-                stretched_eye = transform.resize(eye_img, (h + 10, w))  # Increase height by 10 pixels
-                img_rgb[y:y+h+10, x:x+w] = stretched_eye
+    for image_name in images:
+        img = cv2.imread(images_dir + image_name)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-        # Save the image to the results directory
-        result_image_path = os.path.join(results_path, 'corrected_' + filename)
-        cv2.imwrite(result_image_path, cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR))
+        rects = detector(gray, 0)
+        if len(rects) > 0:
+            for rect in rects:
+                shape = predictor(gray, rect)
+                shape = face_utils.shape_to_np(shape)
 
+                aligned_img = align_eye(img, shape)
+
+                cv2.imwrite("results/" + image_name, aligned_img)
+                print(f"Processing for image {image_name} complete.")
+        else:
+            print(f"No face detected in the image {image_name}.")
